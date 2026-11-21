@@ -1,0 +1,76 @@
+# Flugsuche Deutschland <-> Santiago de Chile
+# Alles hier kannst du anpassen. Nach einer Änderung einfach die Datei auf GitHub speichern.
+
+[trip]
+destination = "SCL"
+earliest_departure = "2027-06-01"   # frühester Abflug
+latest_return = "2027-09-30"        # spätestens zurück in Deutschland
+min_days = 21                       # 3 Wochen
+max_days = 35                       # 5 Wochen
+max_hours_per_direction = 30        # Deutschland -> Santiago bzw. zurück, inkl. Umstiege
+min_self_transfer_hours = 3         # Puffer bei selbst kombinierten Tickets, gleicher Flughafen
+min_self_transfer_hours_airport_change = 5   # z. B. Paris Beauvais -> Charles de Gaulle
+
+[thresholds]
+push_below = 750      # Push-Nachricht unter diesem Gesamtpreis (EUR, hin und zurück)
+alarm_below = 550     # dringender Alarm
+renotify_drop_eur = 25   # gleiches Angebot nur erneut melden, wenn es um so viel billiger wird
+max_pushes_per_run = 3
+digest_weekday = 0       # 0 = Montag: wöchentliche Zusammenfassung
+
+[airports]
+# Flughäfen in Deutschland mit Langstrecken-Verbindungen
+germany_longhaul = ["FRA", "MUC", "BER", "HAM", "DUS", "CGN", "STR"]
+# Flughäfen in Deutschland für Billig-Zubringer (Ryanair, Eurowings, Vueling ...)
+germany_feeder = ["BER", "MUC", "FRA", "HAM", "DUS", "CGN", "STR", "HAJ", "NUE",
+                  "LEJ", "BRE", "FMM", "NRN", "HHN", "DTM", "FKB"]
+# Europäische Drehkreuze, ab denen die Langstrecke starten kann (Stadtcodes erlaubt)
+hubs = ["MAD", "BCN", "LIS", "PAR", "AMS", "LON", "ROM", "MIL", "BRU", "ZRH", "VIE", "CPH"]
+feeder_hubs_max = 6        # für so viele der günstigsten Drehkreuze werden Zubringer gesucht
+# Rückflug darf auch hier starten (vorher Billigflug ab Santiago dorthin)
+open_jaw_return = ["EZE", "LIM", "GRU", "BOG"]
+open_jaw_longhaul_to = ["MAD", "BCN", "LIS"]   # zusätzlich zu den deutschen Langstrecken-Flughäfen
+max_stopover_days = 4      # so viele Tage darfst du z. B. in Buenos Aires bleiben
+
+# Anreise per Zug/Bus aus Deutschland (geschätzte Sparpreise, bei Bedarf anpassen)
+[ground.AMS]
+price = 45
+hours = 4
+note = "Zug ab Köln/Düsseldorf"
+
+[ground.BRU]
+price = 40
+hours = 3
+note = "Zug ab Köln/Aachen"
+
+[ground.ZRH]
+price = 45
+hours = 4
+note = "Zug ab Stuttgart/Freiburg"
+
+[ground.PAR]
+price = 60
+hours = 4
+note = "Zug ab Köln/Frankfurt/Stuttgart"
+
+[ground.VIE]
+price = 50
+hours = 4
+note = "Zug ab München"
+
+[ground.CPH]
+price = 60
+hours = 5
+note = "Zug ab Hamburg"
+
+[google]
+# Google Flights über SerpApi (kostenlos: 250 Suchen/Monat)
+monthly_cap = 240
+sweep_per_run = 2      # Stichproben-Suchen pro Lauf
+verify_per_run = 2     # Live-Prüfung der besten Treffer vor dem Push
+sweep_trip_days = 28
+sweep_step_days = 3
+carry_on_bags = 1      # Preis inkl. Handgepäck
+
+[report]
+top_n = 15
