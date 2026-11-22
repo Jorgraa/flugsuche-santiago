@@ -30,6 +30,8 @@ class Leg:
     def describe(self) -> str:
         if self.mode == "ground":
             return f"{self.note} nach {self.dest} (~{self.price:.0f} €, ~{self.hours:.0f} h, geschätzt)"
+        if self.source == "google" and not self.arr:
+            return f"{self.origin}→{self.dest} am {self.dep:%d.%m.} (Zeiten in Google Flights prüfen)"
         when = self.dep.strftime("%d.%m. %H:%M") if self.dep else "?"
         stops = "direkt" if self.transfers == 0 else f"{self.transfers} Umstieg(e)"
         dur = f", {self.duration_h:.0f} h" if self.arr else ""
@@ -83,6 +85,7 @@ class Itinerary:
     ticket_price: float = 0.0     # Preis eines Rundreise-Tickets
     notes: list[str] = field(default_factory=list)
     verified: str = ""
+    fresh: bool = True            # False = gespeicherter Preis aus einem früheren Lauf
 
     @property
     def price(self) -> float:

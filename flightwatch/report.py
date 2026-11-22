@@ -53,6 +53,18 @@ def write_report(path: Path, its: list[Itinerary], state: dict, cfg: dict, now: 
             L.append(f"- **{m}:** {_eur(it.price)} – {it.out.start_date:%d.%m.} bis {it.back.start_date:%d.%m.} "
                      f"({it.out.route} / {it.back.route})")
         L.append("")
+    gis = sorted((i for i in its if i.kind == "google"), key=lambda i: i.out.start_date)
+    if gis:
+        L += ["## Alle geprüften Termine bei Google Flights (Rundreise ab Deutschland)", "",
+              "| Hin | Zurück | Preis | ab | Flug hin | geprüft | Links |", "|---|---|---|---|---|---|---|"]
+        for it in gis:
+            lh = it.out.legs[0]
+            checked = it.notes[0].split("vom ")[1].split(" (")[0] if "vom " in it.notes[0] else "gerade eben"
+            lk = links.all_links(it)
+            L.append(f"| {it.out.start_date:%d.%m.} | {it.back.start_date:%d.%m.} | **{_eur(it.price)}** | "
+                     f"{lh.origin} | {lh.carrier}, {lh.transfers} Umstieg(e), {it.out.hours or 0:.0f} h | "
+                     f"{checked} | [Google]({lk['Google Flights']}) · [Skyscanner]({lk['Skyscanner']}) |")
+        L.append("")
     gi = state.get("google_insights") or {}
     if gi:
         L += ["## Google-Flights-Preisniveau (Stichproben ab Deutschland, Rundreise)", "",

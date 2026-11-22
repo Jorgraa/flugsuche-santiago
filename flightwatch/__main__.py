@@ -37,8 +37,9 @@ def summary_line(it: Itinerary) -> str:
     o, b = links.longhaul_pair(it)
     start = it.out.legs[0]
     first = "Zug" if start.mode == "ground" else start.origin
+    hin = f"{o.origin}→SCL" if first == o.origin else f"{first}→{o.origin}→SCL"
     return (f"{eur(it.price)} · {it.out.start_date:%d.%m.}–{it.back.start_date:%d.%m.%Y} ({it.days} T) · "
-            f"{first}→{o.origin}→SCL / {b.origin}→{it.back.legs[-1].dest}")
+            f"{hin} / {b.origin}→{it.back.legs[-1].dest}")
 
 
 # ---------- Google Flights ----------
@@ -91,30 +92,51 @@ def google_sweep(gf: GoogleFlights, cfg: dict, state: dict, log) -> list[Itinera
                 "typical": pi.get("typical_price_range"), "return": d2.isoformat(),
                 "checked": datetime.now(TZ).strftime("%Y-%m-%d")}
         best = GoogleFlights.cheapest(res)
-        if not best:
+        results = state.setdefault("google_results", {})
+        if not best or not best.get("flights"):
+            results.pop(d1.isoformat(), None)   # kein passendes Angebot (mehr)
+            log(f"[google] {d1}–{d2}: kein Angebot mit ≤{t['max_hours_per_direction']} h")
             continue
-        legs = []
-        for f in best.get("flights", []):
-            legs.append(Leg(origin=f["departure_airport"]["id"], dest=f["arrival_airport"]["id"], price=0,
-                            dep=gf_parse_time(f["departure_airport"].get("time")),
-                            arr=gf_parse_time(f["arrival_airport"].get("time")),
-                            carrier=f"{f.get('flight_number', '')}", source="google"))
-        if not legs or not legs[0].dep:
-            continue
-        # Die Einzelflüge zu einer Langstrecke zusammenfassen
-        lh = Leg(origin=legs[0].origin, dest=legs[-1].dest, price=0, dep=legs[0].dep, arr=legs[-1].arr,
-                 carrier=", ".join(sorted({l.carrier[:2] for l in legs})), transfers=len(legs) - 1,
-                 source="google", qfrom=legs[0].origin, qto=t["destination"])
-        back = Leg(origin=t["destination"], dest=lh.origin, price=0,
-                   dep=datetime(d2.year, d2.month, d2.day, 12, tzinfo=timezone.utc), arr=None,
-                   source="google", qfrom=t["destination"], qto=lh.origin,
-                   note="Rückflugzeiten in Google prüfen")
-        it = Itinerary(Journey([lh], best.get("total_duration", 0) / 60), Journey([back], None),
-                       "google", ticket_price=float(best["price"]),
-                       notes=["Live-Preis Google Flights (inkl. Handgepäck), Rückflugzeiten nicht geprüft"])
-        its.append(it)
-        log(f"[google] {d1}–{d2}: {best['price']} € ab {lh.origin}, Preisniveau {pi.get('price_level')}")
+        results[d1.isoformat()] = {
+            "price": float(best["price"]), "return": d2.isoformat(),
+            "checked": datetime.now(TZ).strftime("%Y-%m-%d %H:%M"),
+            "total_duration": best.get("total_duration", 0),
+            "legs": [[f["departure_airport"]["id"], f["arrival_airport"]["id"],
+                      f["departure_airport"].get("time"), f["arrival_airport"].get("time"),
+                      f.get("flight_number", "")] for f in best["flights"]],
+        }
+        log(f"[google] {d1}–{d2}: {best['price']} € ab {best['flights'][0]['departure_airport']['id']}, "
+            f"Preisniveau {pi.get('price_level')}")
     state["sweep_index"] = idx
+
+
+def google_from_state(state: dict, cfg: dict, now: datetime) -> list[Itinerary]:
+    """Alle bisher von Google geprüften Termine als Reisen (auch aus früheren Läufen)."""
+    dest = cfg["trip"]["destination"]
+    results = state.get("google_results", {})
+    its = []
+    for d1, rec in list(results.items()):
+        checked = datetime.strptime(rec["checked"], "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+        if date.fromisoformat(d1) < now.date() or now - checked > timedelta(days=21):
+            del results[d1]          # vorbei oder zu alt
+            continue
+        legs = [Leg(origin=o, dest=d, price=0, dep=gf_parse_time(dep), arr=gf_parse_time(arr),
+                    carrier=fn, source="google") for o, d, dep, arr, fn in rec["legs"]]
+        if not legs[0].dep:
+            continue
+        lh = Leg(origin=legs[0].origin, dest=legs[-1].dest, price=0, dep=legs[0].dep, arr=legs[-1].arr,
+                 carrier=", ".join(sorted({l.carrier[:2] for l in legs if l.carrier})),
+                 transfers=len(legs) - 1, source="google", qfrom=legs[0].origin, qto=dest)
+        d2 = date.fromisoformat(rec["return"])
+        back = Leg(origin=dest, dest=lh.origin, price=0,
+                   dep=datetime(d2.year, d2.month, d2.day, 12, tzinfo=timezone.utc), arr=None,
+                   source="google", qfrom=dest, qto=lh.origin)
+        fresh = now - checked < timedelta(hours=1)
+        note = ("Live-Preis Google Flights (inkl. Handgepäck)" if fresh
+                else f"Google-Preis vom {checked:%d.%m. %H:%M} (inkl. Handgepäck)")
+        its.append(Itinerary(Journey([lh], rec.get("total_duration", 0) / 60), Journey([back], None),
+                             "google", ticket_price=rec["price"], fresh=fresh,
+                             notes=[note + ", Rückflugzeiten nicht geprüft"]))
     return its
 
 
@@ -170,12 +192,13 @@ def main() -> int:
         log("TRAVELPAYOUTS_TOKEN fehlt – nur Google Flights.")
     gf = GoogleFlights(serp_key, log=log) if serp_key else None
     if gf:
-        its += google_sweep(gf, cfg, state, log)
+        google_sweep(gf, cfg, state, log)
+    its += google_from_state(state, cfg, now)
     its.sort(key=lambda i: i.price)
 
     # Gute Angebote live prüfen und melden
     notified = state.setdefault("notified", {})
-    deals = [i for i in its if i.price < th["push_below"]
+    deals = [i for i in its if i.fresh and i.price < th["push_below"]
              and (i.key not in notified or i.price <= notified[i.key] - th["renotify_drop_eur"])]
     deals = deals[: th["max_pushes_per_run"]]
     if gf:
